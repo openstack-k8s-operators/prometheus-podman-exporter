@@ -17,7 +17,7 @@ BUILDTAGS ?= \
 
 VERSION = $(shell cat VERSION  | grep VERSION | cut -d'=' -f2)
 REVISION = $(shell cat VERSION  | grep REVISION | cut -d'=' -f2)
-BRANCH=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+BRANCH=18.0-fr4
 
 #=================================================
 # Build binary, clean, install and uninstall
