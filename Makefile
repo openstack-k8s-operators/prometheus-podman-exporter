@@ -22,6 +22,8 @@ BRANCH=$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
 PACKIT_RPM := ./rpm
 PACKIT_PREP = ./prepare_sources_result
 
+IMG ?= quay.io/openstack-k8s-operators/prometheus-podman-exporter:latest
+
 #=================================================
 # Build binary, clean, install and uninstall
 #=================================================
@@ -189,3 +191,15 @@ help: ## Print listing of key targets with their descriptions
 	@$(_HLP_TGTS_CMD) | sort | \
 		awk 'BEGIN {FS = ":(.*)?## "}; \
 			{printf $(_HLPFMT), $$1, $$2}'
+
+#=================================================
+# Container image targets
+#=================================================
+
+.PHONY: docker-build
+docker-build: ## Build container image
+	podman build -t ${IMG} -f Containerfile .
+
+.PHONY: docker-push
+docker-push: ## Push container image
+	podman push ${IMG}
