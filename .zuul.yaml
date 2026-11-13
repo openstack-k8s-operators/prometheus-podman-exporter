@@ -34,6 +34,32 @@
             dependencies:
               - telemetry-openstack-meta-content-provider-master
               - telemetry-container-image-content-provider
+            vars:
+              cifmw_update_containers: true
+            irrelevant-files: *irrelevant-files
+        - s2i-openstack-container-content-provider
+        - telemetry-operator-multinode-default-telemetry:
+            required-projects:
+              - name: openstack-k8s-operators/s2i-openstack-containers
+                override-checkout: main
+              - name: openstack-k8s-operators/telemetry-operator
+                override-checkout: main
+              - name: infrawatch/feature-verification-tests
+                override-checkout: master
+            dependencies:
+              - s2i-openstack-container-content-provider
+              - telemetry-container-image-content-provider
+            vars:
+              cifmw_update_containers: true
+              cifmw_crc_additional_insecure_registries:
+                - "{{ s2i_content_provider_registry_ip }}:5001"
+              cifmw_crc_additional_allowed_registries:
+                - "{{ s2i_content_provider_registry_ip }}:5001"
+              cifmw_set_containers_preserve_unlisted: true
+              cifmw_set_containers_images: >-
+                {{ s2i_content_provider_os_custom_container_images |
+                   dict2items |
+                   json_query('[].{name: key, full_registry: value}') }}
             irrelevant-files: *irrelevant-files
         - feature-verification-tests-noop:
             files: *irrelevant-files
