@@ -2,8 +2,8 @@ package exporter
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/containers/prometheus-podman-exporter/collector"
@@ -14,9 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const minCacheDuration int64 = 5
-
-var errMinCacheDurtion = errors.New("invalid cache duration value, shall be >= " + strconv.Itoa(int(minCacheDuration)))
+var (
+	errInvalidTimeoutDuration = errors.New("duration/timeout must be greater than zero")
+)
 
 type exporterOptions struct {
 	debug                     bool
@@ -25,7 +25,8 @@ type exporterOptions struct {
 	webTelemetryPath          string
 	webDisableExporterMetrics bool
 	webConfigFile             string
-	cacheDuration             int64
+	cacheDuration             time.Duration
+	containerStatsTimeout     time.Duration
 	enableAll                 bool
 	storeLabels               bool
 	whiteListedLabels         string
@@ -34,6 +35,7 @@ type exporterOptions struct {
 	enableVolumes             bool
 	enableNetworks            bool
 	enableSystem              bool
+	enableDiskUsage           bool
 	enhanceMetrics            bool
 }
 
@@ -87,14 +89,20 @@ func Start(cmd *cobra.Command, _ []string) error {
 		}
 	})
 
-	// setup podman registry
+	// setup podman registry and container stat timeout
+	pdcs.SetContainerStatsTimeout(logger, cmdOptions.containerStatsTimeout)
 	pdcs.SetupRegistry()
+
 	// start podman event streamer and initiate first update.
 	updateImages := cmdOptions.enableAll || cmdOptions.enableImages
 
 	go pdcs.StartEventStreamer(logger, updateImages)
 
 	pdcs.StartCacheSizeTicker(logger, cmdOptions.cacheDuration)
+
+	if cmdOptions.enableAll || cmdOptions.enableDiskUsage {
+		pdcs.StartDiskUsageTicker(logger, cmdOptions.cacheDuration)
+	}
 
 	logger.Info("Listening on", "addresses", cmdOptions.webListen)
 
@@ -128,6 +136,7 @@ func setEnabledCollectors(opts *exporterOptions) error {
 		enList = append(enList, "volume")
 		enList = append(enList, "network")
 		enList = append(enList, "system")
+		enList = append(enList, "disk_usage")
 	} else {
 		enList = append(enList, getEnabledCollectors(opts)...)
 	}
@@ -161,6 +170,10 @@ func getEnabledCollectors(opts *exporterOptions) []string {
 
 	if opts.enableSystem {
 		enCollectors = append(enCollectors, "system")
+	}
+
+	if opts.enableDiskUsage {
+		enCollectors = append(enCollectors, "disk_usage")
 	}
 
 	return enCollectors
@@ -202,12 +215,12 @@ func parseOptions(cmd *cobra.Command) (*exporterOptions, error) { //nolint:cyclo
 		return nil, err
 	}
 
-	storeLabels, err := cmd.Flags().GetBool("collector.store_labels")
+	storeLabels, err := cmd.Flags().GetBool("collector.store-labels")
 	if err != nil {
 		return nil, err
 	}
 
-	whiteListedLabels, err := cmd.Flags().GetString("collector.whitelisted_labels")
+	whiteListedLabels, err := cmd.Flags().GetString("collector.whitelisted-labels")
 	if err != nil {
 		return nil, err
 	}
@@ -237,13 +250,19 @@ func parseOptions(cmd *cobra.Command) (*exporterOptions, error) { //nolint:cyclo
 		return nil, err
 	}
 
-	cacheDuration, err := cmd.Flags().GetInt64("collector.cache_duration")
+	enableDiskUsage, err := cmd.Flags().GetBool("collector.disk-usage")
 	if err != nil {
 		return nil, err
 	}
 
-	if cacheDuration < minCacheDuration {
-		return nil, errMinCacheDurtion
+	cacheDuration, err := cmd.Flags().GetDuration("collector.cache-duration")
+	if err != nil {
+		return nil, fmt.Errorf("%w %w", errInvalidTimeoutDuration, err)
+	}
+
+	containerStatsTimeout, err := cmd.Flags().GetDuration("collector.container-stats-timeout")
+	if err != nil {
+		return nil, fmt.Errorf("%w %w", errInvalidTimeoutDuration, err)
 	}
 
 	enhanceMetrics, err := cmd.Flags().GetBool("collector.enhance-metrics")
@@ -259,6 +278,7 @@ func parseOptions(cmd *cobra.Command) (*exporterOptions, error) { //nolint:cyclo
 		webDisableExporterMetrics: webDisableExporterMetrics,
 		webConfigFile:             webConfigFile,
 		enableAll:                 enableAll,
+		containerStatsTimeout:     containerStatsTimeout,
 		storeLabels:               storeLabels,
 		whiteListedLabels:         whiteListedLabels,
 		enableImages:              enableImages,
@@ -266,6 +286,7 @@ func parseOptions(cmd *cobra.Command) (*exporterOptions, error) { //nolint:cyclo
 		enableVolumes:             enableVolumes,
 		enableNetworks:            enableNetworks,
 		enableSystem:              enableSystem,
+		enableDiskUsage:           enableDiskUsage,
 		cacheDuration:             cacheDuration,
 		enhanceMetrics:            enhanceMetrics,
 	}, nil

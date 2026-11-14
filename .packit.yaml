@@ -12,10 +12,6 @@ packages:
     pkg_tool: fedpkg
     specfile_path: rpm/prometheus-podman-exporter.spec
 
-  exporter-centos:
-    pkg_tool: centpkg
-    specfile_path: rpm/prometheus-podman-exporter.spec
-
 merge_pr_in_ci: false
 
 files_to_sync:
@@ -59,24 +55,14 @@ jobs:
       - epel-10-x86_64
       - epel-10-aarch64
 
-  - job: copr_build
-    trigger: pull_request
-    enable_net: true
-    packages: [exporter-centos]
-    targets:
-      - centos-stream-9-x86_64
-      - centos-stream-9-aarch64
-      - centos-stream-10-x86_64
-      - centos-stream-10-aarch64
-
   - job: propose_downstream
     trigger: release
     update_release: false
     packages:
       - exporter-fedora
     dist_git_branches: &build_targets
-      - fedora-all
-      - epel-9
+      - fedora-rawhide
+      - fedora-45
       - epel-10
 
   - job: koji_build

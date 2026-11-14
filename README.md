@@ -19,6 +19,7 @@ prometheus-podman-exporter uses the podman (libpod) library to fetch the statist
 
 | Exporter  | Podman |
 | --------- | ------ |
+| v2        | v6     |
 | >= 1.11.y | v5.x.y |
 | <= 1.10.x | v4.x.y |
 
@@ -33,26 +34,28 @@ Usage:
   prometheus-podman-exporter [flags]
 
 Flags:
-  -t, --collector.cache_duration int          Duration (seconds) to retrieve container, size and refresh the cache. (default 3600)
-  -a, --collector.enable-all                  Enable all collectors by default.
-      --collector.enhance-metrics             enhance all metrics with the same field as for their podman_<...>_info metrics.
-  -i, --collector.image                       Enable image collector.
-  -n, --collector.network                     Enable network collector.
-  -o, --collector.pod                         Enable pod collector.
-  -b, --collector.store_labels                Convert pod/container/image labels on prometheus metrics for each pod/container/image.
-  -s, --collector.system                      Enable system collector.
-  -v, --collector.volume                      Enable volume collector.
-  -w, --collector.whitelisted_labels string   Comma separated list of pod/container/image labels to be converted
-                                              to labels on prometheus metrics for each pod/container/image.
-                                              collector.store_labels must be set to false for this to take effect.
-  -d, --debug                                 Set log level to debug.
-  -h, --help                                  help for prometheus-podman-exporter
-      --version                               Print version and exit.
-      --web.config.file string                [EXPERIMENTAL] Path to configuration file that can enable TLS or authentication.
-  -e, --web.disable-exporter-metrics          Exclude metrics about the exporter itself (promhttp_*, process_*, go_*).
-  -l, --web.listen-address string             Addresses on which to expose metrics and web interface. (default ":9882")
-  -m, --web.max-requests int                  Maximum number of parallel scrape requests. Use 0 to disable (default 40)
-  -p, --web.telemetry-path string             Path under which to expose metrics. (default "/metrics")
+      --collector.cache-duration duration            Cache duration to retrieve container size and disk usage, and refresh the caches. (default 1h0m0s)
+      --collector.container-stats-timeout duration   Timeout for collecting container statistics. (default 1s)
+  -u, --collector.disk-usage                         Enable disk usage collector.
+  -a, --collector.enable-all                         Enable all collectors by default.
+      --collector.enhance-metrics                    enhance all metrics with the same field as for their podman_<...>_info metrics.
+  -i, --collector.image                              Enable image collector.
+  -n, --collector.network                            Enable network collector.
+  -o, --collector.pod                                Enable pod collector.
+  -b, --collector.store-labels                       Convert pod/container/image labels on prometheus metrics for each pod/container/image.
+  -s, --collector.system                             Enable system collector.
+  -v, --collector.volume                             Enable volume collector.
+  -w, --collector.whitelisted-labels string          Comma separated list of pod/container/image labels to be converted
+                                                     to labels on prometheus metrics for each pod/container/image.
+                                                     collector.store_labels must be set to false for this to take effect.
+  -d, --debug                                        Set log level to debug.
+  -h, --help                                         help for prometheus-podman-exporter
+      --version                                      Print version and exit.
+      --web.config.file string                       [EXPERIMENTAL] Path to configuration file that can enable TLS or authentication.
+  -e, --web.disable-exporter-metrics                 Exclude metrics about the exporter itself (promhttp_*, process_*, go_*).
+  -l, --web.listen-address stringArray               Addresses on which to expose metrics and web interface. (default [:9882])
+  -m, --web.max-requests int                         Maximum number of parallel scrape requests. Use 0 to disable (default 40)
+  -p, --web.telemetry-path string                    Path under which to expose metrics. (default "/metrics")
 ```
 
 By default only container collector is enabled, in order to enable all collectors use `--collector.enable-all` or use `--collector.enable-<name>` flag to enable other collector.
@@ -62,6 +65,8 @@ By default only container collector is enabled, in order to enable all collector
 ```shell
 $ ./bin/prometheus-podman-exporter --collector.enable-all
 ```
+
+Container statistics collection times out after one second by default. For hosts where collection takes longer, configure the timeout with `--collector.container-stats-timeout`, for example `--collector.container-stats-timeout=5s`.
 
 The exporter uses plain HTTP without any form of authentication to expose the metrics by default.
 Use `--web.config.file` with a configuration file to use TLS for confidentiality and/or to enable authentication.
@@ -78,6 +83,7 @@ The table below list all existing collector and their description.
 | pod       | exposes pod information
 | volume    | exposes volume information
 | system    | exposes system (host) information
+| disk_usage | exposes disk usage information
 
 ### Collectors examples output
 
@@ -309,6 +315,34 @@ podman_system_conmon_version{version="2.1.0"} 1
 # HELP podman_system_runtime_version Podman system runtime version.
 # TYPE podman_system_runtime_version gauge
 podman_system_runtime_version{version="crun version 1.4.5"} 1
+```
+
+#### `disk_usage`
+
+```shell
+# HELP podman_disk_usage_containers_reclaimable_bytes Podman disk usage estimate of reclaimable container space (containers not running).
+# TYPE podman_disk_usage_containers_reclaimable_bytes gauge
+podman_disk_usage_containers_reclaimable_bytes 0
+
+# HELP podman_disk_usage_containers_size_bytes Podman disk usage of containers (sum of container read-write layers).
+# TYPE podman_disk_usage_containers_size_bytes gauge
+podman_disk_usage_containers_size_bytes 0
+
+# HELP podman_disk_usage_images_reclaimable_bytes Podman disk usage estimate of reclaimable image space (images not used by containers).
+# TYPE podman_disk_usage_images_reclaimable_bytes gauge
+podman_disk_usage_images_reclaimable_bytes 5.593502e+06
+
+# HELP podman_disk_usage_images_size_bytes Podman disk usage of images (sum of all image layers).
+# TYPE podman_disk_usage_images_size_bytes gauge
+podman_disk_usage_images_size_bytes 7.045884e+06
+
+# HELP podman_disk_usage_volumes_reclaimable_bytes Podman disk usage estimate of reclaimable local volume space (volumes not used by containers).
+# TYPE podman_disk_usage_volumes_reclaimable_bytes gauge
+podman_disk_usage_volumes_reclaimable_bytes 32768
+
+# HELP podman_disk_usage_volumes_size_bytes Podman disk usage of local volumes.
+# TYPE podman_disk_usage_volumes_size_bytes gauge
+podman_disk_usage_volumes_size_bytes 98304
 ```
 
 ## License
