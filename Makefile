@@ -12,8 +12,7 @@ SELINUXOPT ?= $(shell test -x /usr/sbin/selinuxenabled && selinuxenabled && echo
 BUILDFLAGS := -mod=vendor
 BUILDTAGS ?= \
 	$(shell hack/systemd_tag.sh) \
-	$(shell hack/btrfs_installed_tag.sh) \
-	$(shell hack/btrfs_tag.sh)
+	$(shell hack/btrfs_installed_tag.sh)
 
 VERSION = $(shell cat VERSION  | grep VERSION | cut -d'=' -f2)
 REVISION = $(shell cat VERSION  | grep REVISION | cut -d'=' -f2)
@@ -111,7 +110,7 @@ install.tools: .install.pre-commit .install.codespell .install.golangci-lint .in
 
 .PHONY: .install.golangci-lint
 .install.golangci-lint:
-	VERSION=2.3.1 ./hack/install_golangci.sh
+	VERSION=2.12.2 ./hack/install_golangci.sh
 
 #=================================================
 # Linting/Formatting/Code Validation targets

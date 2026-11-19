@@ -43,7 +43,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warn("couldn't create filtered metrics handler:", "err", err)
 		w.WriteHeader(http.StatusBadRequest)
 
-		_, err := w.Write([]byte(fmt.Sprintf("couldn't create filtered metrics handler: %s", err))) //nolint:staticcheck
+		errMsg := []byte("couldn't create filtered metrics handler: ")
+		errMsg = fmt.Appendf(errMsg, "%s", err)
+
+		_, err := w.Write(errMsg)
 		if err != nil {
 			h.logger.Warn("failed to write filtered metrics error", "err", err)
 		}
@@ -93,8 +96,6 @@ func (h *handler) innerHandler(filters ...string) (http.Handler, error) {
 	// Only log the creation of an unfiltered handler, which should happen
 	// only once upon startup.
 	if len(filters) == 0 {
-		h.logger.Info("enabled collectors")
-
 		collectors := []string{}
 
 		for n := range podc.Collectors {

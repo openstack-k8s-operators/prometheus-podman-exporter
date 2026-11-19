@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/containers/podman/v5/pkg/domain/entities"
 	"github.com/pkg/errors"
 	"go.podman.io/common/libnetwork/types"
+	"go.podman.io/podman/v6/pkg/domain/entities"
 )
 
 const (
@@ -171,9 +171,7 @@ func portsToString(ports []types.PortMapping) string {
 			hostIP = "0.0.0.0"
 		}
 
-		protocols := strings.Split(port.Protocol, ",")
-
-		for _, protocol := range protocols {
+		for protocol := range strings.SplitSeq(port.Protocol, ",") {
 			if port.Range > 1 {
 				fmt.Fprintf(sb, "%s:%d-%d->%d-%d/%s, ",
 					hostIP, port.HostPort, port.HostPort+port.Range-1,
