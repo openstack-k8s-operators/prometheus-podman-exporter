@@ -34,6 +34,26 @@
             dependencies:
               - telemetry-openstack-meta-content-provider-master
               - telemetry-container-image-content-provider
+            vars:
+              cifmw_update_containers: true
+            irrelevant-files: *irrelevant-files
+        - telemetry-operator-multinode-default-telemetry:
+            required-projects:
+              - name: openstack-k8s-operators/telemetry-operator
+                override-checkout: main
+              - name: infrawatch/feature-verification-tests
+                override-checkout: master
+            dependencies:
+              - telemetry-container-image-content-provider
+            vars:
+              cifmw_update_containers: true
+              cifmw_update_containers_openstack: false
+              # The provider returns only its IP; consumers must trust its
+              # plain-HTTP registry themselves, or EDPM cannot pull the image.
+              cifmw_crc_additional_insecure_registries:
+                - "{{ telemetry_content_provider_registry_ip }}:5001"
+              cifmw_crc_additional_allowed_registries:
+                - "{{ telemetry_content_provider_registry_ip }}:5001"
             irrelevant-files: *irrelevant-files
         - feature-verification-tests-noop:
             files: *irrelevant-files
