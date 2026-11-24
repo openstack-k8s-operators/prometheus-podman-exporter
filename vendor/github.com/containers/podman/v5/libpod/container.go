@@ -404,7 +404,7 @@ func (c *Container) specFromState() (*spec.Spec, error) {
 			logrus.Warnf("Error unmarshalling container %s config: %v", c.ID(), err)
 			return c.config.Spec, nil
 		}
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		// ignore when the file does not exist
 		return nil, fmt.Errorf("opening container config: %w", err)
 	}
@@ -1075,7 +1075,7 @@ func (c *Container) StartupHCPassed() (bool, error) {
 
 // NamespacePath returns the path of one of the container's namespaces
 // If the container is not running, an error will be returned
-func (c *Container) NamespacePath(linuxNS LinuxNS) (string, error) { //nolint:interfacer
+func (c *Container) NamespacePath(linuxNS LinuxNS) (string, error) {
 	if !c.batched {
 		c.lock.Lock()
 		defer c.lock.Unlock()
@@ -1089,7 +1089,7 @@ func (c *Container) NamespacePath(linuxNS LinuxNS) (string, error) { //nolint:in
 
 // namespacePath returns the path of one of the container's namespaces
 // If the container is not running, an error will be returned
-func (c *Container) namespacePath(linuxNS LinuxNS) (string, error) { //nolint:interfacer
+func (c *Container) namespacePath(linuxNS LinuxNS) (string, error) {
 	if c.state.State != define.ContainerStateRunning && c.state.State != define.ContainerStatePaused {
 		return "", fmt.Errorf("cannot get namespace path unless container %s is running: %w", c.ID(), define.ErrCtrStopped)
 	}
@@ -1442,18 +1442,20 @@ func (c *Container) NetworkMode() string {
 		// If there is none, it's host networking.
 		// If there is one and it has a path, it's "ns:".
 		foundNetNS := false
-		for _, ns := range ctrSpec.Linux.Namespaces {
-			if ns.Type == spec.NetworkNamespace {
-				foundNetNS = true
-				if ns.Path != "" {
-					networkMode = fmt.Sprintf("ns:%s", ns.Path)
-				} else {
-					// We're making a network ns,  but not
-					// configuring with Slirp or CNI. That
-					// means it's --net=none
-					networkMode = "none"
+		if ctrSpec.Linux != nil {
+			for _, ns := range ctrSpec.Linux.Namespaces {
+				if ns.Type == spec.NetworkNamespace {
+					foundNetNS = true
+					if ns.Path != "" {
+						networkMode = fmt.Sprintf("ns:%s", ns.Path)
+					} else {
+						// We're making a network ns,  but not
+						// configuring with Slirp or CNI. That
+						// means it's --net=none
+						networkMode = "none"
+					}
+					break
 				}
-				break
 			}
 		}
 		if !foundNetNS {
