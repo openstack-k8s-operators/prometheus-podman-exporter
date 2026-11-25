@@ -486,6 +486,7 @@ func (s *StageExecutor) performCopy(excludes []string, copies ...imagebuilder.Co
 							// additional context contains a tar file
 							// so download and explode tar to buildah
 							// temp and point context to that.
+							// TODO: the returned path is never cleaned up, leaking disk space.
 							path, subdir, err := define.TempDirForURL(tmpdir.GetTempDir(), internal.BuildahExternalArtifactsDir, additionalBuildContext.Value)
 							if err != nil {
 								return fmt.Errorf("unable to download context from external source %q: %w", additionalBuildContext.Value, err)
@@ -679,6 +680,7 @@ func (s *StageExecutor) runStageMountPoints(mountList []string) (map[string]inte
 								// additional context contains a tar file
 								// so download and explode tar to buildah
 								// temp and point context to that.
+								// TODO: the returned path is never cleaned up, leaking disk space.
 								path, subdir, err := define.TempDirForURL(tmpdir.GetTempDir(), internal.BuildahExternalArtifactsDir, additionalBuildContext.Value)
 								if err != nil {
 									return nil, fmt.Errorf("unable to download context from external source %q: %w", additionalBuildContext.Value, err)
@@ -2318,6 +2320,9 @@ func (s *StageExecutor) intermediateImageExists(ctx context.Context, currNode *p
 		if image.TopLayer != "" {
 			imageTopLayer, err = s.executor.store.Layer(image.TopLayer)
 			if err != nil {
+				if errors.Is(err, storage.ErrLayerUnknown) {
+					continue
+				}
 				return "", fmt.Errorf("getting top layer info: %w", err)
 			}
 			// Figure out which layer from this image we should

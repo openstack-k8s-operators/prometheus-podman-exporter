@@ -373,7 +373,10 @@ func (c *Container) syncContainer() error {
 
 		// Only save back to DB if state changed
 		if c.state.State != oldState {
-			// Check for a restart policy match
+			// Mark restart-policy match only for runtime-observed exits from
+			// Running/Paused into Stopped/Exited when the container was not
+			// explicitly stopped by the user. Explicit stopInternal() paths set
+			// state to Stopping first, so they typically do not satisfy this.
 			if c.config.RestartPolicy != define.RestartPolicyNone && c.config.RestartPolicy != define.RestartPolicyNo &&
 				(oldState == define.ContainerStateRunning || oldState == define.ContainerStatePaused) &&
 				(c.state.State == define.ContainerStateStopped || c.state.State == define.ContainerStateExited) &&
@@ -735,17 +738,17 @@ func (c *Container) removeConmonFiles() error {
 		return fmt.Errorf("failed to get attach socket path for container %s: %w", c.ID(), err)
 	}
 
-	if err := os.Remove(attachFile); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(attachFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing container %s attach file: %w", c.ID(), err)
 	}
 
 	ctlFile := filepath.Join(c.bundlePath(), "ctl")
-	if err := os.Remove(ctlFile); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(ctlFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing container %s ctl file: %w", c.ID(), err)
 	}
 
 	winszFile := filepath.Join(c.bundlePath(), "winsz")
-	if err := os.Remove(winszFile); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(winszFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing container %s winsz file: %w", c.ID(), err)
 	}
 
@@ -754,7 +757,7 @@ func (c *Container) removeConmonFiles() error {
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(exitFile); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(exitFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("removing container %s exit file: %w", c.ID(), err)
 	}
 
@@ -1386,6 +1389,16 @@ func (c *Container) stopWithAll() (bool, error) {
 
 // Internal, non-locking function to stop container
 func (c *Container) stop(timeout uint) error {
+	return c.stopInternal(timeout, true)
+}
+
+// Internal, non-locking function to stop container
+// stoppedByUser controls whether to set the StoppedByUser state field.
+func (c *Container) stopInternal(timeout uint, stoppedByUser bool) error {
+	// This is explicit container stop that flows pass through Running -> Stopping -> Stopped/Exited states.
+	// As a result, this does not satisfy the Running/Paused -> Stopped/Exited
+	// transition that is required to trigger restart policy during cleanup.
+
 	logrus.Debugf("Stopping ctr %s (timeout %d)", c.ID(), timeout)
 
 	all, err := c.stopWithAll()
@@ -1406,13 +1419,20 @@ func (c *Container) stop(timeout uint) error {
 		cannotStopErr = fmt.Errorf("can only stop created or running containers. %s is in state %s: %w", c.ID(), c.state.State.String(), define.ErrCtrStateInvalid)
 	}
 
-	c.state.StoppedByUser = true
+	if stoppedByUser {
+		c.state.StoppedByUser = true
+	}
+
 	if cannotStopErr == nil {
 		// Set the container state to "stopping" and unlock the container
 		// before handing it over to conmon to unblock other commands.  #8501
 		// demonstrates nicely that a high stop timeout will block even simple
 		// commands such as `podman ps` from progressing if the container lock
 		// is held when busy-waiting for the container to be stopped.
+		//
+		// This intermediate Stopping state also ensures an explicit stop path is
+		// distinguished from a runtime-observed Running/Paused -> Stopped/Exited
+		// transition when syncContainer() computes RestartPolicyMatch.
 		c.state.State = define.ContainerStateStopping
 	}
 	if err := c.save(); err != nil {
@@ -1824,7 +1844,7 @@ func (c *Container) mountStorage() (_ string, deferredErr error) {
 	defer unix.Close(dirfd)
 
 	err = unix.Mkdirat(dirfd, "etc", 0o755)
-	if err != nil && !os.IsExist(err) {
+	if err != nil && !errors.Is(err, os.ErrExist) {
 		return "", fmt.Errorf("create /etc: %w", err)
 	}
 	// If the etc directory was created, chown it to root in the container
@@ -1924,7 +1944,7 @@ func (c *Container) mountNamedVolume(v *ContainerNamedVolume, mountpoint string)
 		// Skip the rest if it exists.
 		srcStat, err := os.Lstat(srcDir)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				// Source does not exist, don't bother copying
 				// up.
 				return vol, nil
@@ -2384,7 +2404,7 @@ func (c *Container) postDeleteHooks(ctx context.Context) error {
 func (c *Container) writeStringToRundir(destFile, contents string) (string, error) {
 	destFileName := filepath.Join(c.state.RunDir, destFile)
 
-	if err := os.Remove(destFileName); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(destFileName); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("removing %s for container %s: %w", destFile, c.ID(), err)
 	}
 
@@ -2418,7 +2438,7 @@ func (c *Container) saveSpec(spec *spec.Spec) error {
 	// paths
 	jsonPath := filepath.Join(c.bundlePath(), "config.json")
 	if err := fileutils.Exists(jsonPath); err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("doing stat on container %s spec: %w", c.ID(), err)
 		}
 		// The spec does not exist, we're fine
@@ -2454,7 +2474,7 @@ func (c *Container) setupOCIHooks(ctx context.Context, config *spec.Spec) (map[s
 		for _, hDir := range []string{hooks.DefaultDir, hooks.OverrideDir} {
 			manager, err := hooks.New(ctx, []string{hDir}, []string{"precreate", "poststop"})
 			if err != nil {
-				if os.IsNotExist(err) {
+				if errors.Is(err, os.ErrNotExist) {
 					continue
 				}
 				return nil, err
@@ -2716,7 +2736,7 @@ func (c *Container) checkExitFile() error {
 	// Check for the exit file
 	info, err := os.Stat(exitFile)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// Container is still running, no error
 			return nil
 		}
